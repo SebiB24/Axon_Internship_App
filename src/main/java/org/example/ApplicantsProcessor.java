@@ -12,11 +12,9 @@ import java.util.*;
 import java.util.regex.*;
 import java.util.stream.Collectors;
 
-public class InternApp {
+public class ApplicantsProcessor {
 
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
-    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9.@_]*@[a-zA-Z0-9._]+[a-zA-Z]$");
-    private static final Pattern SCORE_PATTERN = Pattern.compile("^\\d+(\\.\\d{1,2})?$");
 
     public static void main(String[] args) {
         if (args.length < 1) {
@@ -40,13 +38,13 @@ public class InternApp {
         List<String> lines = Files.readAllLines(Paths.get(filePath));
         List<Applicant> applicants = new ArrayList<>();
 
-        // Skip header if present
         int startIndex = 0;
+
+        // Skipping header line
         if (lines.size() > 0 && lines.get(0).startsWith("name,email,delivery_datetime,score")) {
             startIndex = 1;
         }
 
-        // Parse and validate each line
         for (int i = startIndex; i < lines.size(); i++) {
             String line = lines.get(i);
             String[] parts = line.split(",");
@@ -57,6 +55,8 @@ public class InternApp {
             String deliveryDateTimeStr = parts[2].trim();
             String scoreStr = parts[3].trim();
 
+            // Validating the data in current line
+            // If the data is not the correct format the line will be skipped
             try {
                 if (!isValidEmail(email)) continue;
 
@@ -67,121 +67,110 @@ public class InternApp {
                 if (score < 0 || score > 10) continue;
 
                 String[] nameParts = name.split("\\s+");
-                if (nameParts.length < 2) continue; // Must have at least first name and last name
+                if (nameParts.length < 2) continue;
 
-                String lastName = nameParts[nameParts.length - 1];
-                applicants.add(new Applicant(name, email, deliveryDateTime, score, lastName));
+                applicants.add(new Applicant(name, email, deliveryDateTime, score));
             } catch (DateTimeParseException | NumberFormatException e) {
-                continue; // Skip invalid lines
+                continue;
             }
         }
 
-        // Process valid applicants
         if (applicants.isEmpty()) {
             return "{\"uniqueApplicants\": 0, \"topApplicants\": [], \"averageScore\": 0}";
         }
 
-        // Group by email, keeping last entry for duplicates
+        /// Removing repeating email lines
+        // Adding the correct applicant in a Map using the email as a key
         Map<String, Applicant> uniqueApplicantsMap = new HashMap<>();
         for (Applicant applicant : applicants) {
-            uniqueApplicantsMap.put(applicant.email, applicant);
+            uniqueApplicantsMap.put(applicant.getEmail(), applicant);
         }
 
+        // Adding the applicants without repeating emails back in a list
         List<Applicant> uniqueApplicants = new ArrayList<>(uniqueApplicantsMap.values());
         int uniqueApplicantsCount = uniqueApplicants.size();
 
-        // Find first and last day
+        /// Making the bonus/penalty system
+        // saving the date of the first day when someone sent the solution using java streams
         LocalDate firstDay = uniqueApplicants.stream()
-                .map(a -> a.deliveryDateTime.toLocalDate())
+                .map(a -> a.getDeliveryDateTime().toLocalDate())
                 .min(LocalDate::compareTo)
                 .orElseThrow();
 
+        // saving the date of the last day when someone sent the solution
         LocalDate lastDay = uniqueApplicants.stream()
-                .map(a -> a.deliveryDateTime.toLocalDate())
+                .map(a -> a.getDeliveryDateTime().toLocalDate())
                 .max(LocalDate::compareTo)
                 .orElseThrow();
 
-        // Apply score adjustments
+        // Applying bonus/penalty point on the score based on the day the solution was sent
         for (Applicant applicant : uniqueApplicants) {
-            LocalDate deliveryDate = applicant.deliveryDateTime.toLocalDate();
-            LocalTime deliveryTime = applicant.deliveryDateTime.toLocalTime();
+            LocalDate deliveryDate = applicant.getDeliveryDateTime().toLocalDate();
+            LocalTime deliveryTime = applicant.getDeliveryDateTime().toLocalTime();
 
-            if (!firstDay.equals(lastDay)) { // Only adjust if not all on same day
+            if (!firstDay.equals(lastDay)) {
                 if (deliveryDate.equals(firstDay)) {
-                    applicant.adjustedScore = applicant.score + 1;
+                    applicant.setAdjustedScore(applicant.getScore() +1); // 1 extra point for sending in the first day
                 } else if (deliveryDate.equals(lastDay) && deliveryTime.isAfter(LocalTime.of(11, 59, 59))) {
-                    applicant.adjustedScore = applicant.score - 1;
-                } else {
-                    applicant.adjustedScore = applicant.score;
+                    applicant.setAdjustedScore(applicant.getScore() -1); // 1 point penalty for sending in the second half of the last day
                 }
-            } else {
-                applicant.adjustedScore = applicant.score;
             }
         }
 
-        // Sort applicants for top 3
+        /// Getting the top 3
+        // Sorting the applicants for top 3
         uniqueApplicants.sort((a1, a2) -> {
-            if (Double.compare(a2.adjustedScore, a1.adjustedScore) != 0) {
-                return Double.compare(a2.adjustedScore, a1.adjustedScore);
+            if (Double.compare(a2.getAdjustedScore(), a1.getAdjustedScore()) != 0) {
+                return Double.compare(a2.getAdjustedScore(), a1.getAdjustedScore());
             }
-            if (Double.compare(a2.score, a1.score) != 0) {
-                return Double.compare(a2.score, a1.score);
+            if (Double.compare(a2.getScore(), a1.getScore()) != 0) {
+                return Double.compare(a2.getScore(), a1.getScore());
             }
-            if (!a1.deliveryDateTime.equals(a2.deliveryDateTime)) {
-                return a1.deliveryDateTime.compareTo(a2.deliveryDateTime);
+            if (!a1.getDeliveryDateTime().equals(a2.getDeliveryDateTime())) {
+                return a1.getDeliveryDateTime().compareTo(a2.getDeliveryDateTime());
             }
-            return a1.email.compareTo(a2.email);
+            return a1.getEmail().compareTo(a2.getEmail());
         });
 
+        // Adding the last name of each applicant in the top 3 to a list
         List<String> topApplicants = uniqueApplicants.stream()
                 .limit(3)
-                .map(a -> a.lastName)
+                .map(Applicant::getLastName)
                 .collect(Collectors.toList());
 
-        // Calculate average score of top half (before adjustment)
-        uniqueApplicants.sort((a1, a2) -> Double.compare(a2.score, a1.score));
-        int topHalfSize = (int) Math.ceil(uniqueApplicants.size() / 2.0);
+        /// Calculating the average score of top half before adjustment
+        uniqueApplicants.sort((a1, a2) -> Double.compare(a2.getScore(), a1.getScore()));
+
+        int topHalfSize = (int) Math.ceil(uniqueApplicants.size() / 2.0); // if we have an odd number size the .5 result gets rounded up
+
         double averageScore = uniqueApplicants.stream()
                 .limit(topHalfSize)
-                .mapToDouble(a -> a.score)
+                .mapToDouble(Applicant::getScore)
                 .average()
                 .orElse(0);
 
-        // Round to 2 decimal places (half up)
+        // Rounding the score to 2 decimals
         averageScore = Math.round(averageScore * 100) / 100.0;
 
-        // Build JSON output
+        /// Building the json output
         return String.format("{\"uniqueApplicants\": %d, \"topApplicants\": %s, \"averageScore\": %.2f}",
                 uniqueApplicantsCount,
                 new Gson().toJson(topApplicants),
                 averageScore);
     }
 
+    /// Validating the data ----------------------------------------------------------------------------------------------------------------
+
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9.@_]*@[a-zA-Z0-9._]+[a-zA-Z]$");
+    private static final Pattern SCORE_PATTERN = Pattern.compile("^\\d+(\\.\\d{1,2})?$");
+
     private static boolean isValidEmail(String email) {
         if (!EMAIL_PATTERN.matcher(email).matches()) return false;
         return email.chars().filter(c -> c == '@').count() == 1;
     }
 
-
     private static boolean isValidScore(String scoreStr) {
         return SCORE_PATTERN.matcher(scoreStr).matches();
     }
 
-    static class Applicant {
-        String name;
-        String email;
-        LocalDateTime deliveryDateTime;
-        double score;
-        String lastName;
-        double adjustedScore;
-
-        public Applicant(String name, String email, LocalDateTime deliveryDateTime, double score, String lastName) {
-            this.name = name;
-            this.email = email;
-            this.deliveryDateTime = deliveryDateTime;
-            this.score = score;
-            this.lastName = lastName;
-            this.adjustedScore = score;
-        }
-    }
 }
