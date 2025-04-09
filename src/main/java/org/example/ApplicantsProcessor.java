@@ -1,6 +1,7 @@
 package org.example;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -28,7 +29,7 @@ public class ApplicantsProcessor {
         try {
             String jsonResult = processApplicantData(inputFile);
             Files.write(Paths.get(outputFile), jsonResult.getBytes());
-            System.out.println("Rezultatul a fost salvat în " + outputFile);
+            System.out.println("The result was saved in: " + outputFile);
         } catch (IOException e) {
             System.err.println("Error processing file: " + e.getMessage());
         }
@@ -153,10 +154,14 @@ public class ApplicantsProcessor {
         averageScore = Math.round(averageScore * 100) / 100.0;
 
         /// Building the json output
-        return String.format("{\"uniqueApplicants\": %d, \"topApplicants\": %s, \"averageScore\": %.2f}",
-                uniqueApplicantsCount,
-                new Gson().toJson(topApplicants),
-                averageScore);
+        Map<String, Object> jsonMap = new LinkedHashMap<>();
+        jsonMap.put("uniqueApplicants", uniqueApplicantsCount);
+        jsonMap.put("topApplicants", topApplicants);
+        jsonMap.put("averageScore", averageScore);
+
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+        return gson.toJson(jsonMap);
+
     }
 
     /// Validating the data ----------------------------------------------------------------------------------------------------------------
